@@ -1,0 +1,130 @@
+services:
+
+  # ---------------------------------------------------------------------
+  # Postgres dedicado a securitydev. Instancia y volumen propios,
+  # separados por completo de la base de users-microservice.
+  # ---------------------------------------------------------------------
+  postgres-securitydev:
+    image: postgres:16-alpine
+    container_name: postgres_securitydev
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_DB: ${SECURITYDEV_DB_NAME:-securitydev}
+      POSTGRES_USER: ${SECURITYDEV_DB_USER:-securitydev_user}
+      POSTGRES_PASSWORD: ${SECURITYDEV_DB_PASSWORD:?SECURITYDEV_DB_PASSWORD no definido en .env}
+    volumes:
+      - securitydev_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${SECURITYDEV_DB_USER:-securitydev_user} -d ${SECURITYDEV_DB_NAME:-securitydev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Postgres dedicado a users-microservice. Nunca comparte instancia,
+  # credenciales ni volumen con la base de securitydev.
+  # ---------------------------------------------------------------------
+  postgres-users:
+    image: postgres:16-alpine
+    container_name: postgres_users
+    expose:
+      - "5432"
+    environment:
+      POSTGRES_DB: ${USERS_DB_NAME:-users_db}
+      POSTGRES_USER: ${USERS_DB_USER:-users_service_user}
+      POSTGRES_PASSWORD: ${USERS_DB_PASSWORD:?USERS_DB_PASSWORD no definido en .env}
+    volumes:
+      - users_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USERS_DB_USER:-users_service_user} -d ${USERS_DB_NAME:-users_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  securitydev-backend:
+    build:
+      context: ./securitydev
+      dockerfile: Dockerfile
+    image: securitydev-backend:local
+    container_name: securitydev_backend
+    expose:
+      - "8080"
+    env_file:
+      - ./securitydev/.env.docker
+    environment:
+      # Sobrescribe cualquier DB_URL apuntando a Neon: en docker-compose
+      # siempre se conecta a su propio Postgres containerizado local.
+      DB_URL: jdbc:postgresql://postgres-securitydev:5432/${SECURITYDEV_DB_NAME:-securitydev}
+      DB_USERNAME: ${SECURITYDEV_DB_USER:-securitydev_user}
+      DB_PASSWORD: ${SECURITYDEV_DB_PASSWORD:?SECURITYDEV_DB_PASSWORD no definido en .env}
+    depends_on:
+      postgres-securitydev:
+        condition: service_healthy
+    restart: unless-stopped
+
+  users-microservice:
+    build:
+      context: ./users-microservice
+      dockerfile: Dockerfile
+    image: users-microservice:local
+    container_name: users_microservice
+    expose:
+      - "8686"
+    env_file:
+      - ./users-microservice/.env.docker
+    environment:
+      DB_URL: jdbc:postgresql://postgres-users:5432/${USERS_DB_NAME:-users_db}
+      DB_USERNAME: ${USERS_DB_USER:-users_service_user}
+      DB_PASSWORD: ${USERS_DB_PASSWORD:?USERS_DB_PASSWORD no definido en .env}
+    depends_on:
+      postgres-users:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Explorador de BD (Criterio 3). Sin ports: propio -> solo accesible
+  # a través de nginx en /pgadmin/, igual que el resto de servicios.
+  # ---------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: pgadmin
+    expose:
+      - "80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:?PGADMIN_DEFAULT_EMAIL no definido en .env}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:?PGADMIN_DEFAULT_PASSWORD no definido en .env}
+      SCRIPT_NAME: /pgadmin
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "False"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      postgres-securitydev:
+        condition: service_healthy
+      postgres-users:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Único servicio con ports: público. Todo lo demás vive detrás de él.
+  # ---------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: reverse_proxy
+    ports:
+      - "8888:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/proxy_headers.conf:/etc/nginx/proxy_headers.conf:ro
+    depends_on:
+      - securitydev-backend
+      - users-microservice
+      - pgadmin
+    restart: unless-stopped
+
+volumes:
+  securitydev_pgdata:
+  users_pgdata:
+  pgadmin_data:

@@ -1,0 +1,1853 @@
+{
+  "info": {
+    "name": "securitydev API - SecurityApp Backend",
+    "description": "Coleccion generada a partir del codigo REAL del repositorio securitydev (AdminController, UserController, HotSpotController, LocationShareController, HealthController, SecurityConfig, DTOs y GlobalExceptionHandler).\n\nSeguridad (JwtAuthenticationConverter + SecurityConfig):\n- Publico (permitAll): GET /api/health/**, GET /api/hotspots y /api/hotspots/**, POST /api/users/register, /api/users/confirm, /api/users/resend-code.\n- Requiere JWT valido (authenticated()): todo lo demas no listado, incluyendo TODO /api/location-shares/** y POST /api/users/sync y las mutaciones de /api/hotspots.\n- Requiere rol ADMIN (grupo Cognito 'ADMIN' -> claim cognito:groups -> ROLE_ADMIN): todo /api/admin/**.\n\nNota de propiedad (no es un check de rol, es logica del controller): en HotSpotController y LocationShareController, ademas del JWT, se valida que el 'sub' del token coincida con el reporterCognitoId / ownerCognitoId del recurso. Si no coincide -> 403 AccessDeniedException (ver GlobalExceptionHandler).\n\nPuerto: no hay server.port en application.yaml -> puerto por defecto de Spring Boot: 8080.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080",
+      "description": "Sin server.port explicito -> default Spring Boot 8080"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "description": "JWT de un usuario normal (sin grupo ADMIN en Cognito)"
+    },
+    {
+      "key": "admin_token",
+      "value": "",
+      "description": "JWT de un usuario en el grupo Cognito 'ADMIN'"
+    },
+    {
+      "key": "admin_user_id",
+      "value": "1",
+      "description": "id numerico local (UserAdminResponse.id) para endpoints /api/admin/users/{id}"
+    },
+    {
+      "key": "nonexistent_id",
+      "value": "999999",
+      "description": "id que no existe, para probar 404"
+    },
+    {
+      "key": "hotspot_id",
+      "value": "1",
+      "description": "id de un hotspot existente (se puede sobreescribir tras crear uno)"
+    },
+    {
+      "key": "share_id",
+      "value": "",
+      "description": "shareId devuelto al crear un location-share (LocationShareResponse.shareId)"
+    },
+    {
+      "key": "recipient_email",
+      "value": "destinatario@example.com",
+      "description": "email invitado a un location-share"
+    },
+    {
+      "key": "register_email",
+      "value": "nuevo.usuario@example.com",
+      "description": "email para probar el flujo de registro"
+    },
+    {
+      "key": "confirm_code",
+      "value": "123456",
+      "description": "codigo real que Cognito envia al correo (reemplazar antes de probar)"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health (publico)",
+      "description": "Endpoints sin autenticacion, permitAll en SecurityConfig.",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Publico (permitAll). Ping basico: confirma que el servicio esta arriba.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});",
+                  "pm.test('status UP', function(){ pm.expect(pm.response.json().status).to.eql('UP'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Health Cognito config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/health/cognito",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "cognito"
+              ]
+            },
+            "description": "Publico (permitAll). Verifica que las variables de entorno de Cognito/AWS existan, sin exponer sus valores reales.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Users - Auth (UserController)",
+      "description": "El perfil completo vive en users-microservice; aqui solo el flujo Cognito de registro/login y el sync inicial.",
+      "item": [
+        {
+          "name": "Register (publico)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "register"
+              ]
+            },
+            "description": "Publico (permitAll). Crea el usuario en Cognito (sin confirmar) y envia codigo por email. 409 si el email ya existe (UsernameExistsException), 400 si falla validacion (ej. password corto).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{register_email}}\",\n  \"name\": \"Juan Perez\",\n  \"number\": \"+593999999999\",\n  \"password\": \"ClaveSegura123\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Confirm registration (publico)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/confirm",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "confirm"
+              ]
+            },
+            "description": "Publico (permitAll). Valida el codigo real enviado por Cognito al correo. Recien aqui email_verified=true.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{register_email}}\",\n  \"code\": \"{{confirm_code}}\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Resend confirmation code (publico)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/users/resend-code",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "resend-code"
+              ]
+            },
+            "description": "Publico (permitAll). Por si el codigo expiro o no llego.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{register_email}}\"\n}"
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync current user (JWT)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/users/sync",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "users",
+                "sync"
+              ]
+            },
+            "description": "Requiere JWT valido (authenticated(), sin rol especifico). Get-or-create en el roster local usando 'sub' y 'email' del token. 401 propio del controller si el JWT no trae esos claims (distinto del 401 de Spring Security por token ausente/invalido).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "HotSpots (HotSpotController)",
+      "description": "GET publico; POST/PUT/DELETE requieren JWT y ademas ownership (sub == reporterCognitoId).",
+      "item": [
+        {
+          "name": "Get all hotspots (publico)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots"
+              ]
+            },
+            "description": "Publico (permitAll). Solo hotspots activos.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get hotspot by id (publico)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "Publico (permitAll).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create hotspot (JWT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots"
+              ]
+            },
+            "description": "Requiere JWT. El 'sub' del token queda como reporterCognitoId.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834,\n  \"modality\": \"robo\",\n  \"description\": \"Robo reportado cerca del parque\",\n  \"durationHours\": 24,\n  \"peopleInvolved\": 2\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});",
+                  "if (pm.response.code === 201) { pm.collectionVariables.set('hotspot_id', pm.response.json().id); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update hotspot (JWT, solo dueno)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "Requiere JWT + ser el mismo reporterCognitoId. Si no coincide -> 403 AccessDeniedException.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834,\n  \"modality\": \"robo\",\n  \"description\": \"Robo reportado cerca del parque\",\n  \"durationHours\": 24,\n  \"peopleInvolved\": 2\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate hotspot (JWT, solo dueno)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{hotspot_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{hotspot_id}}",
+                "deactivate"
+              ]
+            },
+            "description": "Soft delete. Requiere JWT + ser el dueno.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete hotspot (JWT, solo dueno)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "Borrado definitivo. Requiere JWT + ser el dueno.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Location Shares (LocationShareController)",
+      "description": "TODO el recurso requiere JWT (no hay matcher publico); la logica fina de dueno vs. destinatario la resuelve el propio controller, no SecurityConfig.",
+      "item": [
+        {
+          "name": "Start sharing (JWT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares"
+              ]
+            },
+            "description": "Requiere JWT (cae en anyRequest().authenticated(), no hay matcher explicito para location-shares). El dueno queda fijado al 'sub' del token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});",
+                  "if (pm.response.code === 200) { pm.collectionVariables.set('share_id', pm.response.json().shareId); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get share by id (JWT: dueno o destinatario)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}"
+              ]
+            },
+            "description": "Autorizacion doble: (a) eres el dueno (sub==ownerCognitoId), o (b) tu email verificado esta en la tabla de recipients de ESTE shareId. Si no cumple ninguna -> 403.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update location (JWT, solo dueno)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}"
+              ]
+            },
+            "description": "Solo el dueno puede mover su ubicacion. Si no -> 403.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stop sharing (JWT, solo dueno)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}/stop",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}",
+                "stop"
+              ]
+            },
+            "description": "Solo el dueno puede terminar de compartir.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Share via email - invitar destinatario (JWT, solo dueno)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}/share-email",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}",
+                "share-email"
+              ]
+            },
+            "description": "Solo el dueno invita. Guarda el recipient (si no existia) y envia email de notificacion.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{recipient_email}}\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "List recipients (JWT, solo dueno)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}/recipients",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}",
+                "recipients"
+              ]
+            },
+            "description": "Solo el dueno ve la lista de invitados.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Revoke recipient (JWT, solo dueno)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}/recipients/{{recipient_email}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}",
+                "recipients",
+                "{{recipient_email}}"
+              ]
+            },
+            "description": "Solo el dueno revoca acceso a un destinatario puntual.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - Usuarios (AdminController)",
+      "description": "Todo /api/admin/** exige rol ADMIN via hasRole('ADMIN') en SecurityConfig.",
+      "item": [
+        {
+          "name": "Dashboard (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/dashboard",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "dashboard"
+              ]
+            },
+            "description": "Requiere rol ADMIN (grupo Cognito). Metricas generales: totalUsers, activeHotspotsTotal, hotspotsByModality, activeShares.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get all users (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Roster local completo (no llama a Cognito directamente).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get user by id (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{admin_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{admin_user_id}}"
+              ]
+            },
+            "description": "Detalle de un usuario local por id numerico.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create user (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Alta manual: crea en Cognito + BD local.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Usuario Manual\",\n  \"email\": \"manual.admin@example.com\",\n  \"number\": \"+593988888888\",\n  \"password\": \"ClaveSegura123\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update user (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{admin_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{admin_user_id}}"
+              ]
+            },
+            "description": "Edicion de datos, sin chequeo de dueno (el admin edita cualquier usuario).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Usuario Editado\",\n  \"email\": \"editado@example.com\",\n  \"number\": \"+593977777777\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reset password (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{admin_user_id}}/reset-password",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{admin_user_id}}",
+                "reset-password"
+              ]
+            },
+            "description": "Fuerza cambio de contrasena via Cognito Admin API.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newPassword\": \"NuevaClaveSegura123\"\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete user (ADMIN)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{admin_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{admin_user_id}}"
+              ]
+            },
+            "description": "Elimina usuario (local y/o Cognito segun AdminService).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Purge orphaned users (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/purge-orphans",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "purge-orphans"
+              ]
+            },
+            "description": "Limpia filas locales cuyo usuario ya no existe en Cognito.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Sync users from Cognito (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/sync-from-cognito",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "sync-from-cognito"
+              ]
+            },
+            "description": "Trae usuarios de Cognito que faltan en la BD local y los crea. Devuelve tambien usersServiceSyncOk (replica hacia users-microservice).",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin - HotSpots (AdminController)",
+      "description": "Mismas rutas de HotSpotController pero sin validacion de ownership; requiere rol ADMIN.",
+      "item": [
+        {
+          "name": "Get ALL hotspots incl. inactivos (ADMIN)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/hotspots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "hotspots"
+              ]
+            },
+            "description": "A diferencia del GET publico, incluye activos e inactivos.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create hotspot as admin (ADMIN)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/hotspots",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "hotspots"
+              ]
+            },
+            "description": "El admin crea un hotspot igual que un usuario normal (queda como reporter el sub del admin).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834,\n  \"modality\": \"robo\",\n  \"description\": \"Robo reportado cerca del parque\",\n  \"durationHours\": 24,\n  \"peopleInvolved\": 2\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update ANY hotspot (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/admin/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "Sin chequeo de dueno: el admin edita cualquier hotspot.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834,\n  \"modality\": \"robo\",\n  \"description\": \"Robo reportado cerca del parque\",\n  \"durationHours\": 24,\n  \"peopleInvolved\": 2\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Deactivate ANY hotspot (ADMIN)",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/hotspots/{{hotspot_id}}/deactivate",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "hotspots",
+                "{{hotspot_id}}",
+                "deactivate"
+              ]
+            },
+            "description": "Sin chequeo de dueno.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete ANY hotspot (ADMIN)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "Sin chequeo de dueno.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status OK (2xx)', function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200,201,204]);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Casos negativos (401 / 403 / 404)",
+      "description": "Pensados para la defensa: demuestran que SecurityConfig + GlobalExceptionHandler + ownership checks funcionan.",
+      "item": [
+        {
+          "name": "401 - Sin token (ruta protegida)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Sin Authorization header. anyRequest().authenticated() / hasRole('ADMIN') -> 401.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "401 - Sin token en location-shares",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/location-shares/{{share_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "location-shares",
+                "{{share_id}}"
+              ]
+            },
+            "description": "location-shares no tiene matcher publico: cae en authenticated(). Sin token -> 401.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401 Unauthorized', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - JWT valido sin rol ADMIN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users"
+              ]
+            },
+            "description": "Token de usuario normal (sin 'ADMIN' en cognito:groups) contra ruta hasRole('ADMIN') -> 403.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "403 - Editar hotspot de otro usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{hotspot_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{hotspot_id}}"
+              ]
+            },
+            "description": "JWT valido pero sub distinto al reporterCognitoId -> AccessDeniedException -> 403. Usar aqui el id de un hotspot creado por OTRO usuario.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"latitude\": -0.180653,\n  \"longitude\": -78.467834,\n  \"modality\": \"robo\",\n  \"description\": \"Robo reportado cerca del parque\",\n  \"durationHours\": 24,\n  \"peopleInvolved\": 2\n}"
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{access_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403 Forbidden', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - Usuario admin con id inexistente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/admin/users/{{nonexistent_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "{{nonexistent_id}}"
+              ]
+            },
+            "description": "id numerico que no existe en el roster local -> 404.",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{admin_token}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "404 - Hotspot con id inexistente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/hotspots/{{nonexistent_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "hotspots",
+                "{{nonexistent_id}}"
+              ]
+            },
+            "description": "HotSpotNotFoundException -> 404 (GlobalExceptionHandler).",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404 Not Found', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

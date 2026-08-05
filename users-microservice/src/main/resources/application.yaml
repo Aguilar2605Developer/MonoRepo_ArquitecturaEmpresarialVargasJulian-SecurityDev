@@ -1,0 +1,37 @@
+spring:
+  config:
+    import: optional:file:.env[.properties]
+  application:
+    name: users-microservice
+  datasource:
+    # Sin valor por defecto apuntando a Neon: en local/docker SIEMPRE se
+    # exige DB_URL explicito (docker-compose.yml lo inyecta apuntando a
+    # postgres-users, que es una instancia y volumen distintos a los de
+    # securitydev).
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.us-east-1.amazonaws.com/${COGNITO_USER_POOL_ID}
+
+server:
+  port: ${SERVER_PORT:8686}
+
+logging:
+  level:
+    # Logs SQL + parametros de bind, requisito de la rubrica (Criterio 2).
+    # El formato de linea/appender lo controla logback-spring.xml.
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE

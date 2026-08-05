@@ -1,0 +1,221 @@
+{
+  "info": {
+    "name": "Users Microservice",
+    "description": "Colección para el microservicio de usuarios (Spring Boot/Kotlin + Cognito). Base: http://localhost:8686. Requiere token JWT de Cognito; los endpoints de administración requieren rol ADMIN (grupo cognito:groups).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8686" },
+    { "key": "access_token", "value": "" },
+    { "key": "admin_token", "value": "" },
+    { "key": "user_id", "value": "1" },
+    { "key": "cognito_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Me (usuario autenticado)",
+      "item": [
+        {
+          "name": "Crear/actualizar mi perfil (POST /me)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Julian Solorzano\",\n  \"email\": \"julian@puce.edu.ec\",\n  \"phone\": \"0999999999\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Ver mi perfil (GET /me)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar mi perfil (PUT /me)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Julian Solorzano Editado\",\n  \"email\": \"julian@puce.edu.ec\",\n  \"phone\": \"0988888888\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Listar todos los usuarios (GET /)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "Ver usuario por id (GET /{id})",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Ver usuario por cognitoId (GET /cognito/{cognitoId})",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/cognito/{{cognito_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "cognito", "{{cognito_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar usuario (DELETE /{id})",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "{{user_id}}"]
+            }
+          }
+        },
+        {
+          "name": "Sync masivo desde Cognito (POST /admin/sync-from-cognito)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/admin/sync-from-cognito",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "admin", "sync-from-cognito"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"users\": [\n    {\n      \"cognitoId\": \"sub-de-ejemplo-1\",\n      \"email\": \"user1@puce.edu.ec\",\n      \"name\": \"Usuario Uno\",\n      \"phone\": \"0991111111\"\n    },\n    {\n      \"cognitoId\": \"sub-de-ejemplo-2\",\n      \"email\": \"user2@puce.edu.ec\",\n      \"name\": \"Usuario Dos\",\n      \"phone\": null\n    }\n  ]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Casos negativos (validación de negocio)",
+      "item": [
+        {
+          "name": "GET /me sin token -> 401",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/users/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "me"]
+            }
+          }
+        },
+        {
+          "name": "GET / con token sin rol ADMIN -> 403",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{access_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "GET /{id} inexistente -> 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "auth": {
+              "type": "bearer",
+              "bearer": [{ "key": "token", "value": "{{admin_token}}" }]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/users/999999",
+              "host": ["{{base_url}}"],
+              "path": ["api", "users", "999999"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

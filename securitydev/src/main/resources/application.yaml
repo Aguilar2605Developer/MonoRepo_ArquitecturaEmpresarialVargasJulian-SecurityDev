@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: securitydev
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    # Sin valor por defecto apuntando a Neon: en local/docker SIEMPRE se
+    # exige DB_URL explicito (docker-compose.yml lo inyecta apuntando al
+    # Postgres containerizado propio de este servicio).
+    url: ${DB_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+  mail:
+    host: smtp.gmail.com
+    port: 587
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: https://cognito-idp.${COGNITO_REGION:us-east-1}.amazonaws.com/${COGNITO_USER_POOL_ID}
+
+app:
+  frontend:
+    url: ${FRONTEND_URL:http://localhost:8100}
+  admin:
+    email: ${ADMIN_EMAIL:}
+
+cognito:
+  user-pool-id: ${COGNITO_USER_POOL_ID}
+  client-id: ${COGNITO_CLIENT_ID:}
+  region: ${COGNITO_REGION:us-east-1}
+
+logging:
+  level:
+    org.springframework.security: INFO
+    # Logs SQL + parametros de bind, requisito de la rubrica (Criterio 2).
+    # El formato de linea/appender lo controla logback-spring.xml.
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE
+users-service:
+  base-url: ${USERS_SERVICE_URL:http://localhost:8081}
