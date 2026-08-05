@@ -350,6 +350,3 @@ MAIL_PASSWORD=contraseña-de-aplicacion-de-gmail
 FRONTEND_URL=http://localhost:8100
 ADMIN_EMAIL=admin@example.com
 ```
-
-⚠️ Los archivos `.env.docker` reales **no se versionan**; se entregan `.env.docker.example`
-sin secretos como plantilla.
